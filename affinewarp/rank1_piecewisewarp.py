@@ -1,4 +1,4 @@
-"""Defines core functionality of Piecewise Linear Time Warping models."""
+"""Defines core functionality of Rank1 Piecewise Linear Time Warping models."""
 
 import numpy as np
 import numba
@@ -8,6 +8,7 @@ from sklearn.utils.validation import check_is_fitted
 
 from .spikedata import SpikeData
 from .shiftwarp import ShiftWarping
+from .piecewisewarp import PiecewiseWarping
 from .utils import check_dimensions
 
 from ._optimizers import OptimizerFactory, warp_penalties
@@ -18,13 +19,15 @@ _DATA_ERROR = ValueError("'data' must be provided as a dense numpy array "
                          "spike data.")
 
 
-class PiecewiseWarping(object):
+class Rank1_PiecewiseWarping(object):
     """Piecewise Affine Time Warping applied to an analog (dense) time series.
 
     Attributes
     ----------
-    template : ndarray
+    template_u : ndarray
         Time series average under piecewise linear warping.
+    template_gain: ndarray
+        Gain for each trial. template_gain[t]*template_u is the best estimator for each trial.
     x_knots : ndarray
         Horizontal coordinates of warping functions.
     y_knots : ndarray
@@ -35,7 +38,7 @@ class PiecewiseWarping(object):
 
     def __init__(self, n_knots=0, warp_reg_scale=0.0, smoothness_reg_scale=0.0,
                  l2_reg_scale=1e-7, min_temp=-3, max_temp=-1.5, n_restarts=1,
-                 loss='quadratic'):
+                 loss='rank1_norm2'):
         """
         Parameters
         ----------
@@ -55,6 +58,8 @@ class PiecewiseWarping(object):
             Largest mutation rate for evolutionary optimization of warps.
         n_restarts : int, default 1
             Number of times to restart optimization on warps.
+        loss: loss functions, to get non-rank1 version of piecewisewarp, loss="quadratic";
+            to get rank1 version, loss = 'rank1_norm2','rank1_norm1','rank1_norm0'.
         """
 
         # check inputs
@@ -69,7 +74,9 @@ class PiecewiseWarping(object):
         self.min_temp = min_temp
         self.max_temp = max_temp
         self.n_restarts = n_restarts
-        self.template = None
+        self.template_u = None
+        self.template_gain = None
+        self.init_warps = None
         self.loss_hist = []
 
         self.loss = loss
@@ -103,6 +110,7 @@ class PiecewiseWarping(object):
         elif isinstance(init_warps, (PiecewiseWarping, ShiftWarping)):
             # Copy warps from another model
             self.copy_fit(init_warps)
+            self.init_warps=init_warps
         else:
             raise ValueError("Parameter 'init_warps' misspecified. Expected "
                              "a PiecewiseWarping or ShiftWarping instance.")
@@ -151,7 +159,16 @@ class PiecewiseWarping(object):
 
         # Allocate storage.
         K, T, N = data.shape
-        self.initialize_warps(K, init_warps)
+        
+        if init_warps=='shift':
+            init_warps=PiecewiseWarping(n_knots=0, smoothness_reg_scale=0)
+            init_warps.fit(data,iterations=100, warp_iterations=100)
+            data=init_warps.transform(data)
+            self.initialize_warps(K, None)
+            self.init_warps=init_warps
+        else:
+            self.initialize_warps(K, init_warps)
+
         self._initialize_storage(K)
 
         # Ensure template is initialized.
@@ -189,8 +206,8 @@ class PiecewiseWarping(object):
         storage = np.empty((data.shape[0], 4, max(2, self.n_knots + 2)))
         is_shift_only = self.n_knots < 0
         self._warp_optimizer(
-            self.x_knots, self.y_knots, self.template[:, neuron_idx],
-            np.ones(np.shape(self.template)[0]),
+            self.x_knots, self.y_knots, self.template_u[:, neuron_idx],
+            self.template_gain,
             data[:, :, neuron_idx], self.warp_reg_scale, self._losses,
             self._penalties, warp_iterations, self.n_restarts,
             self.min_temp, self.max_temp, storage, is_shift_only)
@@ -205,11 +222,18 @@ class PiecewiseWarping(object):
         trial_idx : indices
             Specifies subset of trials to fit template on.
         """
-        self.template = self._template_optimizer(
-            self.x_knots[trial_idx], self.y_knots[trial_idx], self.template,
-            data[trial_idx], self.smoothness_reg_scale, self.l2_reg_scale)
+        if self.loss=='rank1_norm2' or self.loss=='rank1_norm1' or self.loss=='rank1_norm0':
+            try:
+                transformed_data = self.transform(data[trial_idx])
+            except:
+                transformed_data=data[trial_idx]
+            self.template_u,self.template_gain = self._template_optimizer(transformed_data)
+        else:
+            self.template = self._template_optimizer(
+                self.x_knots[trial_idx], self.y_knots[trial_idx], self.template,
+                data[trial_idx], self.smoothness_reg_scale, self.l2_reg_scale)
 
-    def predict(self):
+    def predict(self,init_warps=False):
         """
         Construct model estimate for each trial. Specifically, this warps the
         learned template by the warping function learned for each trial.
@@ -223,10 +247,21 @@ class PiecewiseWarping(object):
 
         # apply warping functions to template
         K = self.x_knots.shape[0]
-        T, N = self.template.shape
+        T, N = self.template_u.shape
+
         result = np.empty((K, T, N))
+
+        if init_warps:
+            # first warp back based on the learned rank-1 model
+            results1=densewarp(self.x_knots, self.y_knots,
+                         self.template_u[None,:],self.template_gain[:,None],result)
+            # then warp back based on the init warps
+            m=self.init_warps
+            return densewarp(m.x_knots, m.y_knots,
+                         results1,np.array([1]),result)
+            
         return densewarp(self.x_knots, self.y_knots,
-                         self.template[None, :, :], result)
+                         self.template_u[None,:],self.template_gain[:,None],result)
 
     def argsort_warps(self, t=0.5):
         """
@@ -253,7 +288,7 @@ class PiecewiseWarping(object):
                        np.full(K, t), np.empty(K))
         return np.argsort(y)
 
-    def transform(self, data):
+    def transform(self, data, init_warps=False):
         """
         Apply inverse warping functions to dense or spike data.
 
@@ -279,35 +314,9 @@ class PiecewiseWarping(object):
 
         # Transform dense data array (trials x timebins x units).
         else:
-            return densewarp(self.y_knots, self.x_knots, X, np.empty_like(X))
-    
-    def get_shift(self, data):
-        """
-        Apply inverse warping functions to dense or spike data, and get shifts
-
-        Parameters
-        ----------
-        data : ndarray or SpikeData instance
-            Time series data to be transformed.
-
-        Returns
-        -------
-        shifts that need to be applied to each element
-        """
-        # Check that model is fitted. Check dimensions and rename data -> X.
-        self.assert_fitted()
-        X, is_spikes = check_dimensions(self, data)
-
-        # Transform spike train.
-        if is_spikes:
-            w = sparsewarp(self.x_knots, self.y_knots, X.trials,
-                           X.fractional_spiketimes, np.empty(X.n_spikes))
-            wt = w * (X.tmax - X.tmin) + X.tmin
-            return SpikeData(X.trials, wt, X.neurons, X.tmin, X.tmax)
-
-        # Transform dense data array (trials x timebins x units).
-        else:
-            return densewarp(self.y_knots, self.x_knots, X, np.empty_like(X), get_shift=True)
+            if init_warps:
+                return densewarp(self.y_knots, self.x_knots, self.init_warps.transform(X), np.array([1]), np.empty_like(X))
+            return densewarp(self.y_knots, self.x_knots, X, np.array([1]), np.empty_like(X))
 
     def event_transform(self, trials, frac_times):
         """
@@ -482,7 +491,7 @@ class PiecewiseWarping(object):
         self._record_loss(data)
 
     def assert_fitted(self):
-        check_is_fitted(self, ('x_knots', 'y_knots', 'template'))
+        check_is_fitted(self, ('x_knots', 'y_knots', 'template_u'))
 
     def _initialize_storage(self, n_trials):
         """
@@ -498,7 +507,10 @@ class PiecewiseWarping(object):
 
     def _record_loss(self, data):
         # Compute and record reconstruction loss.
-        self._eval_loss(self.x_knots, self.y_knots, self.template, np.ones(np.shape(self.x_knots)[0]), data, self._losses)
+        #if self.init_warps=='shift':
+        #    loss=np.mean((self.predict(init_warps=True)-data)**2)
+        #    self.loss_hist.append(loss)
+        self._eval_loss(self.x_knots, self.y_knots, self.template_u, self.template_gain, data, self._losses)
         self.loss_hist.append(self._losses.mean())
 
         # Compute and record warping penalties.
@@ -507,6 +519,36 @@ class PiecewiseWarping(object):
 
         # Record total objective history.
         self.objective_hist.append(self.loss_hist[-1] + self.penalty_hist[-1])
+
+    def get_shift(self, data):
+        """
+        Apply inverse warping functions to dense or spike data, and get shifts
+
+        Parameters
+        ----------
+        data : ndarray or SpikeData instance
+            Time series data to be transformed.
+
+        Returns
+        -------
+        shifts that need to be applied to each element
+        """
+        # Check that model is fitted. Check dimensions and rename data -> X.
+        self.assert_fitted()
+        X, is_spikes = check_dimensions(self, data)
+
+        # Transform spike train.
+        if is_spikes:
+            w = sparsewarp(self.x_knots, self.y_knots, X.trials,
+                            X.fractional_spiketimes, np.empty(X.n_spikes))
+            wt = w * (X.tmax - X.tmin) + X.tmin
+            return SpikeData(X.trials, wt, X.neurons, X.tmin, X.tmax)
+
+            # Transform dense data array (trials x timebins x units).
+        else:
+            return densewarp(self.y_knots, self.x_knots, X, 1, np.empty_like(X), get_shift=True)
+
+
 
 
 @numba.jit(nopython=True)
@@ -528,6 +570,7 @@ def sparsewarp(X, Y, trials, xtst, out):
 
     Note
     ----
+    Does not have the gain mdoulation implemented yet.
     X and Y are assumed to be sorted along axis=1
 
     Returns
@@ -557,12 +600,12 @@ def sparsewarp(X, Y, trials, xtst, out):
 
 
 @numba.jit(nopython=True)
-def densewarp(X, Y, data, out, get_shift=False):
+def densewarp(X, Y, data, gain, out, get_shift=False):
 
     K = out.shape[0]
     T = out.shape[1]
-    shift = np.zeros_like(out)
     n_knots = X.shape[1]
+    shift = np.zeros_like(out)
 
     for k in range(K):
 
@@ -606,6 +649,13 @@ def densewarp(X, Y, data, out, get_shift=False):
                 i = int(_i)
                 out[k, t] = (1-rem) * data[kk, i] + rem * data[kk, i+1]
                 shift[k,t]=_i-t
+    if len(np.shape(gain))>1: 
+                #out[k,t]=out*gain[k] 
+        out=out*gain
+                    
     if get_shift:
         return shift
+
     return out
+
+    

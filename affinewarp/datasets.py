@@ -9,9 +9,10 @@ from scipy.ndimage import gaussian_filter1d
 
 def piecewise_warped_data(
         n_trials=120, n_timepoints=100, n_neurons=50, n_knots=1,
-        knot_mutation_scale=0.1, clip_y_knots=True, template_scale=3.0,
+        knot_mutation_scale=0.1, clip_y_knots=True, 
+        template=None,template_scale=3.0,
         template_base=0.0, template_drop=0.5, template_smoothness=5.0,
-        noise_type="poisson", noise_scale=0.1, seed=None):
+        noise_type="poisson", noise_scale=0.1, gain_scale=0, seed=None):
     """Generates data from the PiecewiseWarping model.
 
     Parameters
@@ -28,6 +29,8 @@ def piecewise_warped_data(
         Scale of noise added to warping function knots.
     clip_y_knots : bool
         If True, clip y coordinates on warping functions between zero and one.
+    template: ndarray, shape=(n_timepoints, n_neurons)
+        Optional, if not provided, will use exponential distribution to generate data. 
     template_scale : float
         Scale of exponentially distributed template values (before smoothing).
     template_drop : float
@@ -90,22 +93,37 @@ def piecewise_warped_data(
         model.y_knots[:, -1] = 1.
 
     # Initialize template.
-    template_shape = n_timepoints, n_neurons
-    template = template_base + \
-        rs.exponential(template_scale, size=template_shape) * \
-        rs.binomial(1, 1 - template_drop, size=template_shape)
-    template = gaussian_filter1d(template, template_smoothness, axis=0)
-    template[0] *= 0.0
-    template[-1] *= 0.0
-    model.template = template
+    if template is None:
+        template_shape = n_timepoints, n_neurons
+        template = template_base + \
+            rs.exponential(template_scale, size=template_shape) * \
+            rs.binomial(1, 1 - template_drop, size=template_shape)
+        if template_smoothness>0:
+            template = gaussian_filter1d(template, template_smoothness, axis=0)
+        template[0] *= 0.0
+        template[-1] *= 0.0
+        model.template = template
+    else:
+        model.template = template
 
     # Generate data
     data = model.predict()
+
+    # Gain modulation
+    if gain_scale>0:
+        K,T,N = np.shape(data)
+        rs1 = np.random.RandomState(seed+1)
+        gain = rs1.normal(loc=1, scale=gain_scale, size=np.array([K,1,N]))
+        data = data*gain
+
+    # Noise
     if noise_type == 'poisson':
         data = rs.poisson(data)
     elif noise_type == 'gaussian':
-        data += rs.normal(loc=0.0, scale=noise_scale)
-
+        data += rs.normal(loc=0.0, scale=noise_scale, size=np.shape(data))
+    
+    if gain_scale>0:
+        return data, model, gain
     return data, model
 
 

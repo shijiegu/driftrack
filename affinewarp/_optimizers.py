@@ -89,6 +89,13 @@ def _construct_template_optimizer(loss):
             # print(opt.message)
 
             return (opt.x).reshape(template.shape)
+    
+    elif loss=='rank1_norm1' or loss=='rank1_norm2' or loss=='rank1_norm0':
+        def f(transformed_data):
+            
+            u,s,vt=np.linalg.svd(np.squeeze(transformed_data).T, full_matrices=False, compute_uv=True, hermitian=False)
+
+            return u[:,0,None],vt[0,:,None]*s[0,None]
 
     return f
 
@@ -104,9 +111,18 @@ def _construct_warp_optimizer(loss):
     elif loss == 'poisson':
         _loss = _poiss_loss
         _interp_loss = _interp_poiss_loss
+    elif loss == 'rank1_norm0':
+        _loss = _norm0_loss
+        _interp_loss = _interp_norm0_loss
+    elif loss == 'rank1_norm1':
+        _loss = _norm1_loss
+        _interp_loss = _interp_norm1_loss
+    elif loss == 'rank1_norm2':
+        _loss = _quad_loss
+        _interp_loss = _interp_quad_loss
     else:
-        raise ValueError("Expected 'loss' to either be 'quadratic' or "
-                         "'poisson'; but saw {}.".format(loss))
+        raise ValueError("Expected 'loss' to be one of 'quadratic', "
+                         "'poisson', 'rank1_norm2', 'rank1_norm1' but saw {}.".format(loss))
 
     # ------------------------------------------------------------ #
     # --- Function to compute reconstruction loss on one trial --- #
@@ -153,6 +169,54 @@ def _construct_warp_optimizer(loss):
                 loss += _interp_loss(rem, template[int(j)], template[int(j)+1], data[t])
 
         return loss
+    
+    @numba.jit(nopython=True)
+    def reconstruction_loss_partial(X, Y, template, data):
+        loss = 0.0
+        loss_all=0
+
+        # initialize line segement for interpolation
+        slope = (Y[1] - Y[0]) / (X[1] - X[0])
+        x0 = X[0]
+        y0 = Y[0]
+
+        # 'n' counts knots in piecewise affine warping function.
+        n = 1
+
+        # iterate over time bins
+        for t in range(len(data)):
+
+            # fraction of trial complete
+            x = t / (len(data) - 1)
+
+            # update interpolation point
+            while (n < len(X)-1) and (x > X[n]):
+                y0 = Y[n]
+                x0 = X[n]
+                slope = (Y[n+1] - y0) / (X[n+1] - x0)
+                n += 1
+                if loss>loss_all:
+                    loss_all=loss
+                loss=0
+
+            # compute index in warped time
+            z = y0 + slope * (x - x0)
+
+            # clip warp interpolation between zero and one
+            if z <= 0:
+                loss += _loss(template[0], data[t])
+
+            elif z >= 1:
+                loss += _loss(template[-1], data[t])
+
+            # do linear interpolation
+            else:
+                j = z * (len(data) - 1)
+                rem = j % 1
+                loss += _interp_loss(rem, template[int(j)], template[int(j)+1], data[t])
+        if loss>loss_all:
+            loss_all=loss
+        return loss_all
 
     # ------------------------------------------------------ #
     # --- Create function to fit warps on a single trial --- #
@@ -250,14 +314,14 @@ def _construct_warp_optimizer(loss):
     # --- Create function to fit warps in parallel across all trials --- #
     # ------------------------------------------------------------------ #
     @numba.jit(nopython=True, parallel=True)
-    def fit_all_warps(x_knots, y_knots, template, data, warp_reg_scale,
+    def fit_all_warps(x_knots, y_knots, template, template_gain, data, warp_reg_scale,
                       losses, penalties, iterations, n_restarts,
                       min_temp, max_temp, storage, is_shift_only):
 
         for k in numba.prange(x_knots.shape[0]):
             new_loss, new_pen = fit_one_warp(
                 x_knots[k], y_knots[k],  # initial guess
-                template, data[k],  # warping template and target
+                template*template_gain[k], data[k],  # warping template and target
                 warp_reg_scale, iterations,  # params for random search
                 n_restarts, min_temp, max_temp,  # more params
                 losses[k], penalties[k],
@@ -271,12 +335,15 @@ def _construct_warp_optimizer(loss):
     # ---------------------------------------------------------------------- #
     # --- Create function to evaluate loss in parallel across all trials --- #
     # ---------------------------------------------------------------------- #
-    @numba.jit(nopython=True, parallel=True)
-    def full_loss(x_knots, y_knots, template, data, storage):
+    #@numba.jit(nopython=True, parallel=True)
+    def full_loss(x_knots, y_knots, template, template_gain, data, storage):
         K, T, N = data.shape
+        if len(template_gain)==0:
+            template_gain = np.ones((K,1))
+        
         for k in numba.prange(K):
             storage[k] = reconstruction_loss(
-                x_knots[k], y_knots[k], template, data[k]) / (T * N)
+                x_knots[k], y_knots[k], template*template_gain[k], data[k]) / (T * N)
 
     return fit_all_warps, full_loss
 
@@ -288,6 +355,22 @@ def _quad_loss(pred, targ):
         result += (pred[i] - targ[i])**2
     return result
 
+@numba.jit(nopython=True)
+def _norm1_loss(pred, targ):
+    result = 0.0
+    for i in range(pred.size):
+        loss=np.abs(pred[i] - targ[i])
+        result += loss+0
+    return result
+
+@numba.jit(nopython=True)
+def _norm0_loss(pred, targ):
+    result = 0.0
+    for i in range(pred.size):
+        loss=(pred[i] - targ[i])>0
+        result += loss+0
+    return result
+
 
 @numba.jit(nopython=True)
 def _interp_quad_loss(a, y1, y2, targ):
@@ -295,6 +378,22 @@ def _interp_quad_loss(a, y1, y2, targ):
     b = 1 - a
     for i in range(y1.size):
         result += (b*y1[i] + a*y2[i] - targ[i])**2
+    return result
+
+@numba.jit(nopython=True)
+def _interp_norm1_loss(a, y1, y2, targ):
+    result = 0.0
+    b = 1 - a
+    for i in range(y1.size):
+        result += np.abs(b*y1[i] + a*y2[i] - targ[i])
+    return result
+
+@numba.jit(nopython=True)
+def _interp_norm0_loss(a, y1, y2, targ):
+    result = 0.0
+    b = 1 - a
+    for i in range(y1.size):
+        result += (b*y1[i] + a*y2[i] - targ[i])>0+0
     return result
 
 
