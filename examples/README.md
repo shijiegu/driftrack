@@ -1,10 +1,9 @@
 ## Contents
 
-These jupyter notebooks demonstrate the basic functionality of this package and reproduce the essential figures in our manuscript ([Williams et al., 2019](https://www.biorxiv.org/content/10.1101/661165v1)).
+Similar to the parent repository affinewarp by Alex H. Williams, these jupyter notebooks demonstrate the basic functionality of this package and reproduce the essential figures in our manuscript in the repository.
 
-1) [**`shift_warping.ipynb`**](/examples/shift_warping.ipynb) - demonstrates "shift-only time warping" on a minimal dataset.
-2) [**`piecewise_warping.ipynb`**](/examples/piecewise_warping.ipynb) - demonstrates the full range of time warping models (shift-only, linear, piecewise linear) and cross-validation procedures.
-3) [**`olfaction/`**](/examples/olfaction/) - demonstrates automatic alignment of evoked olfactory responses (data provided by C. Wilson and D. Rinberg).
-4) [**`primate_motor_cortex/`**](/examples/primate_motor_cortex/) - demonstrates discovery of LFP-aligned beta-band oscillations in primate motor cortex during movement preparation (data provided by T. Fisher, E. Trautmann, and K. Shenoy).
-5) [**`rat_motor_cortex/`**](/examples/rat_motor_cortex/) - demonstrates discovery of ~7 Hz oscillations in rat motor cortex during a timed motor production task (data provided by A. Dhawale and B. Ölveczky).
-6) [**`orbitofrontal_cortex/`**](/examples/orbitofrontal_cortex/) - demonstrates a preliminary analysis of the [ofc-2](https://crcns.org/data-sets/ofc/ofc-2/about-ofc-2) dataset provided on CRCNS.
+1) [**`Fig1_Landscape.ipynb`**](/examples/Fig1_Landscape.ipynb) - demonstrates the objective value landscape. Its complexity confirmed that we should only use brute force greedy search to find the solution of warping to the problem.
+2) [**`Fig2_SimulateData.ipynb`**](/examples/Fig2_SimulateData.ipynb) - simulates data, and demonstrates the full range of drift correction models (shift-only, linear, piecewise linear).
+3) [**`Fig3_RealData.ipynb`**](/examples/Fig3_RealData.ipynb/) - demonstrates drift correction on real data, with time averaging window 1 second (data provided by Nick Steinmetz (https://www.biorxiv.org/content/10.1101/2020.10.27.358291v1)). Note that part of this notebook needs to work with Kilosort MATLAB code (Please download Kilosort MATLAB repo (https://github.com/MouseLand/Kilosort) and then add the code from the folder [**`/examples/kilosort_code_forFig3/`**](/examples/kilosort_code_forFig3/).
+4) [**`Fig3_RealData_tensofasecond`**](/examples/Fig3_RealData_tensofasecond/) - demonstrates drift correction on real data, with time averaging window 0.1 second (data provided by Nick Steinmetz (https://www.biorxiv.org/content/10.1101/2020.10.27.358291v1)). Note that part of this notebook needs to work with MATLAB.
+5) [**`Fig4_shift_warp_PCA.ipynb`**](/examples/Fig4_shift_warp_PCA.ipynb) - demonstrates drift correction on real data (data provided by Nick Steinmetz (https://www.biorxiv.org/content/10.1101/2020.10.27.358291v1)).

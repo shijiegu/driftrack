@@ -1,28 +1,24 @@
 # Piecewise Linear Time Warping
 
-This repo contains research code for time warping multi-dimensional time series. This was developed as part of the following manuscript, which focuses on analysis of large-scale neural recordings (though this code can be also be applied to many other data types):
+This repo contains code to do electrophysiological data drift-correction for large scale recordings such as that obtained by Neuralpixel Recordings. The method is similar to that in the recent Neuralpixel 2.0 paper (https://www.biorxiv.org/content/10.1101/2020.03.02.974014v2.full), but we pursue a version based on 1-d time series with extensions in modeling abrupt global amplitude change in spiking data. For details on the problem as well as the methodology, please refer to the manuscript included in this repository. The manuscipt demonstrates that our method achieves the same level of performance as the image registration method. This project was developed for UC Berkeley EE290-001 course project. The machinary of solving the problem largely comes from [Discovering precise temporal patterns in large-scale neural recordings through robust and interpretable time warping](https://doi.org/10.1016/j.neuron.2019.10.020), with minor changes.
 
-> [Discovering precise temporal patterns in large-scale neural recordings through robust and interpretable time warping](https://doi.org/10.1016/j.neuron.2019.10.020).<br>
-Williams AH, Poole B, Maheswaranathan N, Dhawale AK, Fisher T, Wilson CD, Brann DH, Trautmann E, Ryu S, Shusterman R, Rinberg D, Ölveczky BP, Shenoy KV, Ganguli S (2020). *Neuron*. 105(2):246-259.e8
 
-The code fits time warping models with either linear or piecewise linear warping functions. These models are more constrained than the classic [Dynamic Time Warping (DTW)](https://en.wikipedia.org/wiki/Dynamic_time_warping) algorithm, and are thus less prone to overfit to data with high levels of noise. This is demonstrated below on synthethic data. Briefly, a 1-dimensional time series is measured over many repetitions (trials), and exhibits a similar temporal profile but with random jitter on each trial. Simply averaging across trials produces a poor description of the typical time series (red trace at bottom). A linear time warping model identifies a much better prototypical trace (labeled "template"), while accounting for the temporal translations on each trial with warping functions (blue to red linear functions at bottom). On the right, a nonlinear warping model based on DTW (called [DBA](https://github.com/fpetitjean/DBA)) is shown for comparison. While DBA can work well on datasets with low noise, linear warping models can be easier to interpret and less likely to overfit.
-
-<img width="1445" alt="screen shot 2018-11-05 at 2 03 55 pm" src="https://user-images.githubusercontent.com/636625/48030119-e3a28d80-e104-11e8-8932-c1251f168f4b.png">
+<img width="710" alt="Screen Shot 2020-12-23 at 9 44 31 AM" src="https://user-images.githubusercontent.com/29357775/103009234-66b11880-4504-11eb-9a24-f26a7a09938b.png">
 
 ## Getting started
 
-After installing (see below), check out the demos in the [`examples/`](https://github.com/ahwillia/affinewarp/tree/master/examples) folder.
+After installing (see below), check out the demos in the [`examples/`](https://github.com/shijiegu/driftrack/tree/master/examples) folder.
 
 Either download or clone the repo:
 
 ```
-git clone https://github.com/ahwillia/affinewarp/
+git clone https://github.com/shijiegu/driftrack/
 ```
 
 Then navigate to the downloaded folder:
 
 ```
-cd /path/to/affinewarp
+cd /path/to/driftrack
 ```
 
 Install the package and requirements:
@@ -34,12 +30,7 @@ pip install -r requirements.txt
 
 You will need to repeat these steps if we update the code.
 
-## Other references / resources
-
-* [tw-pca](https://github.com/ganguli-lab/twpca) - Time-Warping Principal Components Analysis, also supports linear and shift-only warping functions. Does not support piecewise linear warping functions and assumes that time series are low-dimensional. Nonlinear warping methods are also supported. See our [conference abstract](https://cs.stanford.edu/~poole/twpca_poster.pdf) and [poster](https://cs.stanford.edu/~poole/twpca_poster.pdf).
-
-* [tslearn](https://tslearn.readthedocs.io/) - A Python package supporting a variety of time series models, including DTW-based methods.
 
 ## Contact
 
-ahwillia@stanford.edu (or open an issue here).
+shijiegu@berkeley.edu (or open an issue here).
