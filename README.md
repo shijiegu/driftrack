@@ -34,6 +34,9 @@ Run the example notebooks to explore the functionality of the package.
 
 You will need to repeat these steps if we update the code.
 
+## Acknowledgements
+This code repo is largely based off Alex H William's repo [affinewarp](https://github.com/ahwillia/affinewarp). Alex's correspondence during this project has been helpful.
+I would also like to thank Dr. Daniel Egert (UCSF) and Dr. Nick A. Steinmetz (University of Washington, Seattle) for their timely response to my inquiry for datasets used in the project.
 
 ## Contact
 
