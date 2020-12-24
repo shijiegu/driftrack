@@ -21,14 +21,18 @@ Then navigate to the downloaded folder:
 
 ```
 cd /path/to/driftrack
-```
-
-Install the package and requirements:
 
 ```
-pip install .
-pip install -r requirements.txt
+
+You can now head to the "example" folder and launch Jupter Notebook from there.
+
 ```
+cd /path/to/examples
+
+```
+
+Run the example notebooks to explore the functionality of the package. 
+
 
 You will need to repeat these steps if we update the code.
 
