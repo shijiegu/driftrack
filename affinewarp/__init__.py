@@ -18,4 +18,5 @@ if sys.version_info[0] != 3:
 from .piecewisewarp import PiecewiseWarping
 from .rank1_piecewisewarp import Rank1_PiecewiseWarping
 from .shiftwarp import ShiftWarping
+from .shiftwarp_PCA import ShiftWarping_PCA
 from .spikedata import SpikeData

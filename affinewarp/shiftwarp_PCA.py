@@ -13,8 +13,7 @@ from .bmat import nnls_solveh_banded
 
 class ShiftWarping_PCA(object):
     """
-    Time-Shifted PCA in Williams 2020 (a PCA version of Tensor version as in https://www.biorxiv.org/content/10.1101/2020.03.02.974014v2.full)
-    Models translations + PCA in time across a collection of multi-dimensional time
+    Models translations in time across a collection of multi-dimensional time
     series. Does not model stretching or compression of time across trials.
 
     Attributes
@@ -29,7 +28,7 @@ class ShiftWarping_PCA(object):
 
     def __init__(self, maxlag=.5, warp_reg_scale=0, smoothness_reg_scale=0,
                  l2_reg_scale=1e-7, loss='quadratic', center_shifts=False,
-                 nonneg=False,num_components=5):
+                 nonneg=False,num_components=2):
         """Initializes ShiftWarping object with hyperparameters.
 
         Parameters
@@ -122,14 +121,14 @@ class ShiftWarping_PCA(object):
 
         # Initialize shifts and model template.
         self.shifts = np.zeros(K, dtype=int)
-        self.amps = np.zeros((K,self.num_components))
+        self.amps = np.ones((K,self.num_components))/self.num_components
         self.template = np.zeros((T,N,self.num_components))
         self._fit_template(
             data[trial_idx, :, :], self.shifts[trial_idx],self.amps[trial_idx,:])
 
         # Initialize loss history
         if self.loss == "quadratic":
-            resid = self.template[None, :, :] - data
+            resid = self.predict() - np.squeeze(data)
             self.loss_hist = [np.mean(resid ** 2)]
         else:
             z1 = np.exp(self.template)[None, :, :]
@@ -143,6 +142,7 @@ class ShiftWarping_PCA(object):
         for i in pbar:
             # Update parameters and compute loss.
             self._fit_warps(data[:, :, neuron_idx])
+            self._fit_amps(data[trial_idx, :, :], self.shifts[trial_idx], self.template)
             self._fit_template(
                 data[trial_idx, :, :], self.shifts[trial_idx], self.amps[trial_idx])
             self._record_loss(data)
@@ -165,7 +165,7 @@ class ShiftWarping_PCA(object):
 
         # Compute reconstruction errors for each shift.
         losses = np.zeros((K, 2 * L + 1))
-        self._shifted_loss(data, self.template, losses)
+        self._shifted_loss(data, self.template, losses, self.amps)
 
         # Compute total objective and find optimal shifts.
         obj = losses + self._warp_penalty
@@ -216,34 +216,38 @@ class ShiftWarping_PCA(object):
         for r in range(self.num_components):
             self._fit_template_r(r, data, shifts, amps[:,r])
 
-    def _fit_amps(self, r, data, shifts, template):
+    def _fit_amps(self, data, shifts, template):
         # Data dimensions.
         K, T, N = data.shape
         assert len(shifts) == K
+        amps=np.zeros_like(self.amps)
 
         if self.loss == 'quadratic':
             for r in range(self.num_components):
-                DtD = _diff_gramian(T, self.smoothness_reg_scale * K, self.l2_reg_scale * K)
+                #DtD = _diff_gramian(T, self.smoothness_reg_scale * K, self.l2_reg_scale * K)
                 WtX = np.zeros((T, N))
                 WtW_t = np.zeros((T,K))
                 _fill_WtW_t(shifts, WtW_t)
                 template_shifted = np.zeros((K, T,1))
-                _predict(template[:,r], self.shifts, template_shifted)
+                _predict(np.expand_dims(template[:,:,r],axis=2), self.shifts, template_shifted)
 
                 res=np.squeeze(data)-self.predict_wo_r(r)
                 for k in range(K):
-                    amp_nominator=np.dot(res[k,:].reshape((-1,1)),template_shifted[k,:,1].reshape((-1,1)))
-                    amp_denom=template[:,r].T*np.diag(WtW_t[:,k])*template[:,r]                
-                    self.amps[k,r]=amp_nominator/amp_denom
+                    amp_nominator=np.dot(res[k,:].reshape((1,-1)),template_shifted[k,:,0].reshape((-1,1)))
+                    amp_denom=np.matmul(np.matmul(template[:,:,r].T,np.diag(WtW_t[:,k])),template[:,:,r])                
+                    amps[k,r]=amp_nominator/amp_denom
+            self.amps=amps
 
         else:
             raise ValueError(
-                "Have not implemented thgis yet.")
+                "Have not implemented this yet.")
 
 
     def _record_loss(self, data):
         """Computes loss on all data."""
-        loss = self._eval_loss(data, self.template, self.shifts)
+        #loss = self._eval_loss(data, self.template, self.shifts)
+        resid = self.predict() - np.squeeze(data)
+        loss = np.mean(resid ** 2)
         self.loss_hist.append(loss)
 
     def argsort_warps(self):
@@ -266,11 +270,11 @@ class ShiftWarping_PCA(object):
 
         # Compute prediction in JIT-compiled function.
         _predict(self.template, self.shifts, pred)
-        return np.sum(pred,2)
+        return np.sum(pred*np.expand_dims(self.amps,axis=1),2)
 
     def predict_wo_r(self,r):
         """
-        Returns model prediction without r component (warped version of template on each trial).
+        Returns model prediction (warped version of template on each trial).
         """
 
         # Allocate space for prediction.
@@ -283,7 +287,6 @@ class ShiftWarping_PCA(object):
 
         # Compute prediction in JIT-compiled function.
         _predict(self.template[:,:,ind], self.shifts, pred)
-        print(np.shape(pred))
 
         return np.sum(pred*np.expand_dims(self.amps[:,ind],axis=1),2)
 
@@ -363,7 +366,7 @@ def _predict(template, shifts, out):
     ShiftWarping.predict(...) wraps this function.
     """
     K = len(shifts)
-    T, N, R = template.shape
+    T, R = np.shape(template)[0], np.shape(template)[2]
     for r in range(R):
         template_=template[:,:,r]
         for k in range(K):
@@ -381,7 +384,6 @@ def _predict(template, shifts, out):
                 out[k, t, r] = template_[-1]
                 t += 1
 
-
 @numba.jit(nopython=True)
 def _fill_WtW(shifts, amps, out):
     T = len(out)
@@ -395,6 +397,7 @@ def _fill_WtW(shifts, amps, out):
             for i in range(1, T - s):
                 out[i] += a
 
+@numba.jit(nopython=True)
 def _fill_WtW_t(shifts, out):
     T = len(out)
     for t in range(np.shape(shifts)[0]):
@@ -408,10 +411,9 @@ def _fill_WtW_t(shifts, out):
             for i in range(1, T - s):
                 out[i,t] += 1
 
-
 @numba.jit(nopython=True)
 def _fill_WtX(data, shifts, amps, out):
-    K, T, N = data.shape
+    K, T = np.shape(data)[0], np.shape(data)[1]
     for k in range(K):
         i = -shifts[k]
         t = 0
@@ -491,7 +493,7 @@ def _eval_poiss_loss(data, template, shifts):
 
 
 @numba.jit(nopython=True, parallel=True)
-def _compute_shifted_quad_loss(data, template, losses):
+def _compute_shifted_quad_loss(data, template, losses,amps):
 
     K, T, N = data.shape
     L = losses.shape[1] // 2
@@ -509,7 +511,7 @@ def _compute_shifted_quad_loss(data, template, losses):
 
                 # quadratic loss
                 for n in range(N):
-                    losses[k, l+L] += ((data[k, t, n] - template[i, n]) ** 2)
+                    losses[k, l+L] += ((data[k, t, n] - np.sum(template[i, n, :]*amps[k,:])) ** 2)
 
 
 @numba.jit(nopython=True, parallel=True)
