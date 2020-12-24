@@ -1,6 +1,7 @@
 ## Contents
 
 Similar to the parent repository affinewarp by Alex H. Williams, these jupyter notebooks demonstrate the basic functionality of this package and reproduce the essential figures in our manuscript in the repository.
+We recommend notebook [**`Fig0_shift_warp_PCA.ipynb`**] and notebook [**`Fig3_RealData.ipynb`**] as a start.
 
 0) [**`Fig0_shift_warp_PCA.ipynb`**](/examples/Fig4_shift_warp_PCA.ipynb) - Implements the 2D matrix version of "Time-Shifted Tensor Decomposition" as in this [preprint](https://www.biorxiv.org/content/10.1101/2020.03.02.974014v2.full.pdf). After applying to real data, we found that the second PC is significantly smaller than the first, and so we directly enforce rank=1 in the method development.
 1) [**`Fig1_Landscape.ipynb`**](/examples/Fig1_Landscape.ipynb) - demonstrates the objective value landscape. Its complexity confirmed that we should only use brute force greedy search to find the solution of warping to the problem.
