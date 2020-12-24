@@ -1,6 +1,6 @@
 # Drift-tracking for NeuralPixel-a-like large scale ephys data
 
-This repo contains code to do electrophysiological data drift-correction for large scale recordings such as that obtained by Neuralpixel Recordings. The method is similar to that in the recent [Neuralpixel 2.0 paper](https://www.biorxiv.org/content/10.1101/2020.03.02.974014v2.full), but we pursue a version based on 1-d time series with extensions in modeling abrupt global amplitude change in spiking data. 
+This repo contains code to do electrophysiological data drift-correction for high-density large-scale recordings such as that obtained by Neuropixel Recordings. The method is similar to that in the recent [Neuropixel 2.0 paper](https://www.biorxiv.org/content/10.1101/2020.03.02.974014v2.full), but we pursue a version based on 1-d time series with extensions in modeling abrupt global amplitude change in spiking data. 
 
 For details on the problem as well as the methodology, please refer to the [manuscript](https://github.com/shijiegu/driftrack/blob/master/Drift_Tracking_Manuscript.pdf) included in this repository. The manuscipt demonstrates that our method achieves the same level of performance as the image registration method. This project was developed for UC Berkeley [EE290-001](https://people.eecs.berkeley.edu/~yima/courses/EE290-Fall2019/EE290-2019-syllabus.pdf) course project. The machinary of solving the problem largely comes from [Discovering precise temporal patterns in large-scale neural recordings through robust and interpretable time warping](https://doi.org/10.1016/j.neuron.2019.10.020), with minor changes.
 
@@ -21,14 +21,12 @@ Then navigate to the downloaded folder:
 
 ```
 cd /path/to/driftrack
-
 ```
 
 You can now head to the "example" folder and launch Jupter Notebook from there.
 
 ```
-cd /path/to/examples
-
+cd examples
 ```
 
 Run the example notebooks to explore the functionality of the package. 
